@@ -1,0 +1,377 @@
+---
+title: "Final Project 101"
+author: "Mohamed Shehata"
+date: "22/04/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+
+library(XML)
+library(RCurl)
+library(RSelenium)
+library(httr)
+
+#load all results first to check it in the environment 
+load("Res.RData")
+
+#first start the browser 
+remDr <- rsDriver(verbose = T,
+                  remoteServerAddr = "localhost",
+                  port = 4444L,
+                  browser=c("firefox"))
+
+```
+
+
+
+```{r}
+
+#pick a client 
+
+rm <- remDr$client
+
+#is it working ?!
+
+rm$getStatus()
+
+#yes it is ready
+
+rm$navigate("https://www.linkedin.com")
+
+#then,we will click on the home page button
+
+rm$findElement(using = "xpath", 
+               '//a[@data-tracking-control-name="homepage-basic_intent-module-jobs"]')$clickElement()
+
+#then, we will click on the search button 
+
+rm$findElement(using = "xpath", 
+               '//input[@aria-label="Search job titles or companies"]')$clickElement()
+
+#Enter data scientist in the search 
+rm$findElement(using = "xpath", 
+               '//input[@aria-label="Search job titles or companies"]')$sendKeysToElement(list("data scientist"))
+
+#Enter the location (Sweden) as our place of interest 
+
+rm$findElement(using = "xpath", 
+               '//input[@aria-label="Location"]')$sendKeysToElement(list("Sweden",key="enter"))
+
+```
+
+
+```{r}
+
+#Get the page source and save it 
+current_page<- rm$getCurrentUrl()
+
+page <- unlist(rm$getPageSource(current_page[[1]]))
+
+#Get the html for the Linkedin page 
+tpages <- htmlParse(page)
+
+writeLines(as.character(page) , paste0("rPage num.5"))
+getwd()
+
+```
+
+
+
+```{r}
+
+#Get the nodes for the jobs we are interested in and save it in LinkedIndf2
+
+nodes <- xpathSApply(tpages, '//div[@class="result-card__contents job-result-card__contents"]')
+
+for (i in length(nodes)) {
+  
+  titles <- xpathSApply(nodes[[i]],'//h3[@class="result-card__title job-result-card__title"]',xmlValue)
+  
+  location <- xpathSApply(nodes[[i]],'//span[@class="job-result-card__location"]',xmlValue)
+  
+  Company <- xpathSApply(nodes[[i]],'//h4[@class="result-card__subtitle job-result-card__subtitle"]',xmlValue)
+  
+  LinkedIndf2 <- cbind(titles,location,Company)
+  
+}
+
+
+
+```
+
+
+
+```{r}
+
+#moving to the next step as we will search on the data science master programs in Sweden via university admissions webpage 
+
+#Search with keyword data science and click
+rm$navigate("https://www.universityadmissions.se/intl/search")
+
+rm$findElement(using = "xpath", 
+               '//input[@class="ui-autocomplete-input"]')$sendKeysToElement(list("data science"))
+
+rm$findElement(using = "xpath", 
+               '//button[@id="searchButton"]')$clickElement()
+
+```
+
+
+```{r}
+
+#save the current page for the university admission and get the html for it
+
+current_page2 <- rm$getCurrentUrl()
+
+page2 <- unlist(rm$getPageSource(current_page2[[1]]))
+
+tpages2 <- htmlParse(page2)
+
+writeLines(as.character(page2) , paste0("rPage num.6"))
+getwd()
+
+```
+
+```{r}
+
+#Then, we will get the nodes for all programs and save it in program and subtitle vectors to be used later 
+
+nodes3 <- xpathSApply(tpages2, '//div[@class="namearea"] ')
+
+Program <- c()
+Subtitle <- c()
+
+for (i in length(nodes3)) {
+  
+  Program <- xpathSApply(nodes3[[i]],'//h3[@class="heading4 moreinfolink"]',xmlValue)
+  
+  Subtitle <- xpathSApply(nodes3[[i]],'//span[@class="appl_fontsmall"]',xmlValue)
+  
+}
+
+#Finally, close the page
+#Thanks Rselenium
+
+rm$close()
+
+rm(remDr)
+rm(rm)
+gc()
+
+```
+
+
+```{r}
+
+#now, we have two data frames but let's do some regex!
+
+#first, we should remove duplicated rows for both data frames
+
+#for Linkedin df and save it in LinkedIndf1
+LinkedIndf1 <- as.data.frame(unique(LinkedIndf2)) 
+
+#for university df, we extract elements from the vector subtitle as below 
+
+Credits <- Subtitle[seq(1,length(Subtitle),2)]
+
+Univ <- Subtitle[seq(2,length(Subtitle),2)]
+
+Universitydf <- cbind(Program,Credits,Univ)
+
+university_newdf <- as.data.frame(unique(Universitydf) ) 
+
+req_credits <- c(60,120)
+
+#and finally save it in univ_df2 
+
+univ_df2 <- university_newdf[is.element(university_newdf$Credits, req_credits), ]
+
+
+```
+
+
+
+```{r}
+
+#Now, data frames are ready for regex 
+
+#first, create a location variable in univ_df2 data frame and clean the university variable 
+
+#clean word (credits) 
+
+univ_df2$Univ <- gsub("^(.*Credits,)","\\2",univ_df2$Univ)
+
+#Get the location and save it in a vector 
+
+univ_df2$Location <- gsub("^(.*Location:)", "\\2",univ_df2$Univ)
+
+#clean the university variable from (location) word and (,)
+
+univ_df2$Univ <- gsub("^(.*)Location:(.*)", "\\1",univ_df2$Univ)
+
+univ_df2$Univ <- gsub("\\,", "",univ_df2$Univ)
+
+#Here, we will get only programs that have words (data,computational,machine learning,statistics)
+
+df1 <- univ_df2[grep("[Dd]ata", univ_df2$Program), ] 
+df2 <- univ_df2[grep("[Cc]omputational", univ_df2$Program), ] 
+df2 <- df2 [-3,]
+df3 <- univ_df2[grep("[Mm]achine", univ_df2$Program), ] 
+df4 <- univ_df2[grep("[Ss]tatistics", univ_df2$Program), ] 
+
+#and then combine them all in on data frame and remove the duplicates
+
+Education_df <- rbind(df1,df2,df3,df4)
+
+Education_df <- unique(Education_df)
+
+#then, we will remove extra spaces from education data frame 
+
+Education_df$Location <- gsub("^\\s+|\\s+$", "", Education_df$Location)
+
+Education_df$Univ <- gsub("^\\s+|\\s+$", "", Education_df$Univ)
+
+Education_df$Program<- gsub("^\\s+|\\s+$", "", Education_df$Program)
+
+Education_df$Credits<- gsub("^\\s+|\\s+$", "", Education_df$Credits)
+
+
+```
+
+
+```{r}
+
+#Now, time to clean the Linkedin data frame
+#First, I will get all jobs that contain words like (data,scientist,analyst,machine)
+
+LinkedIndf1 <- LinkedIndf1[grep("[Dd]ata",LinkedIndf1$titles),]
+
+Lin1 <- LinkedIndf1[ grep("[Ss]cientist",LinkedIndf1$titles),] 
+Lin2  <- LinkedIndf1[ grep("[Aa]nalyst",LinkedIndf1$titles),] 
+Lin3  <- LinkedIndf1[ grep("[Mm]achine",LinkedIndf1$titles),] 
+
+#and them combine all them together in LinkedIndf3
+
+LinkedIndf3 <- rbind(Lin1,Lin2,Lin3)
+
+#then, create the location variable 
+
+LinkedIndf3$location <- gsub("^(.*), Sweden(.*)", "\\1",LinkedIndf3$location)
+
+#then, clean the variable titles as we interested in only words like (data scientist or analyst )
+
+LinkedIndf3$titles <- gsub("^(.*Data [Ss]cientist\\b) (.*)", "\\1", LinkedIndf3$titles)
+
+LinkedIndf3$titles <- gsub("^(.*Analyst) (.*)", "\\1", LinkedIndf3$titles)
+
+LinkedIndf3$titles <- gsub("^(.*)([Dd]ata)", "\\2", LinkedIndf3$titles)
+
+#create the variable city from location variable to be used later and also do some cleaning 
+
+LinkedIndf3$city <- gsub("^(.*)([Cc]ounty)", "\\1", LinkedIndf3$location)
+
+LinkedIndf3$city <- gsub("^(.*)([Ss]tockholm)", "\\2", LinkedIndf3$city)
+
+
+LinkedIndf3$city <- gsub("^(.*)([Jj]onkoping|[Vv]astmanland|[Kk]almar|[Uu]ppsala|[Oo]rebro)", "\\2", LinkedIndf3$city)
+
+
+```
+
+
+
+
+```{r}
+
+#plot all observations for both data frames per city
+
+library(ggplot2)
+
+ggplot(Education_df)+geom_bar(aes(y = Location))
+ggplot(LinkedIndf3)+geom_bar(aes(y = city))
+
+
+```
+
+
+```{r}
+
+#Now, time to get the geocode and then use it to plot it in maps 
+
+library(ggmap)
+library(sf)
+
+
+register_google(key = "XXXXXXXXXXX") #use my API from google could account 
+has_google_key()  #is it TRUE? (YES)
+
+#Get the lon and lat for the location for educationdf
+
+df<-  geocode(Education_df$Location) 
+
+#then, combine it and remove NA if any, 
+
+Education_df <- cbind(Education_df,df)
+
+Education_df <- na.omit(Education_df)
+
+library(dplyr) # to use the pipe operator (magrittr can be used too)
+library(leaflet) # acces to openstreetmap layer
+library(htmltools) # label each point
+
+# Plot the Map for the education or the master programs 
+
+Education_df %>% 
+    leaflet() %>% 
+    addTiles() %>% 
+    addCircleMarkers( label = ~htmlEscape(Education_df$Location ))
+
+
+
+```
+
+
+
+```{r}
+
+#do the same with the Linkedin data frame and plot it in a map
+
+Linkedin_geocode <- geocode(LinkedIndf3$city)
+
+
+LinkedIndf3 <- cbind(LinkedIndf3,Linkedin_geocode)
+
+LinkedIndf3 %>% 
+  leaflet() %>% 
+  addTiles() %>%
+  addCircleMarkers(label = ~htmlEscape(LinkedIndf3$city))
+
+save.image("Res.RData")
+
+#########################THE END####################
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
