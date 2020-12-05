@@ -1,0 +1,321 @@
+---
+title: "Final Project 2"
+author: "Mohamed Shehata"
+date: "31/05/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+
+#remove the environment and open packages  
+rm(list=ls())
+library(tidyverse)
+library(dplyr)
+library(FactoMineR)#For GDA
+library(explor) #GUI for GDA
+library(DescTools) #For Gini coefficients
+library(factoextra)
+library(cluster)
+
+
+
+#Data Citation: 
+# Cohen, Joseph Nathan and Joseph van der Naald. 2019. “Measuring Socialism Data Set,version 1.0.” Data Set. Retrieved (osf.io/4g37h).
+
+#first, read the data for socialism 
+socialism <- read.csv("D:/CSS MCS/Digital Strategies/Final Project 2/Datasets/Socialism/Socialism.csv")
+
+#reorder the column for country and country code to make them first 
+
+socialism  <- socialism [, c(1,245,246, 2:244, 247 )]
+
+#make df of column names for easy search about columns' numbers 
+column_names <- as.data.frame(colnames(socialism))
+
+# Delete the NA from the country column and change the population to be in millions like (322 M) for united states to view the data before selecting the required variables 
+
+socialism <- socialism %>% mutate( population = round( population / 1000000,2 ) ) %>% filter(country != is.na(country) )
+
+#To avoid NA, I recoded all NA values with 0, to make it easy for data cleaning after in the three data sets 
+socialism[is.na(socialism)] <- 0
+
+#also naming the rows to make them available in the (labels name) instead of numbers for countries  
+row.names(socialism)
+row.names(socialism) <- socialism[,3]
+row.names(socialism)
+
+#check the data ?!
+head(socialism)
+dim(socialism)
+summary(socialism)
+
+#create data frames for our interested topics
+
+# Public_Expenditures = df1
+
+#all interested variables related to Public_Expenditures
+Public_Expenditures <- socialism[, c(3,6:18,25:34 )]
+
+#is it better to round the values? ..YES!!!
+Public_Expenditures1 <-  round(Public_Expenditures[,2:24],2)
+
+#then, we will add the countries again after losing them and name the variable with (country)
+Public_Expenditures <- cbind(Public_Expenditures[,1],Public_Expenditures1)
+ names(Public_Expenditures)[names(Public_Expenditures) == "Public_Expenditures[, 1]"] <- "Country"
+
+ #Reorder some variables again to make the columns about total Public_Expenditures first .. 
+Public_Expenditures <- Public_Expenditures [, c(1:4,24,5:23)]
+
+#Remove the 0 values from only this data set that they do not record any register data espically total Public_Expenditures..
+Public_Expenditures <- Public_Expenditures %>% filter(exp.total != 0 )
+
+#Let's check it again
+head(Public_Expenditures)
+dim(Public_Expenditures)
+summary(Public_Expenditures)
+
+#Good, Move to the second DF
+######## Government_Revenue = df2
+
+#all interested variables related to Government_Revenue and do as we did with the first df
+Government_Revenue <- socialism[,c(20,227:229,231,237,235)]
+Government_Revenue <- cbind(socialism[,3],Government_Revenue)
+ names(Government_Revenue)[names(Government_Revenue) == "socialism[, 3]"] <- "Country"
+ 
+#Do we have raws that they do not have any values ??
+#Yes, and it is better to remove any raws or columns that they do not have any values
+ Government_Revenue <- Government_Revenue[rowSums(Government_Revenue[,-1] != 0) > 0, colSums(Government_Revenue != 0) > 0]
+
+ #let's check it !!
+head(Government_Revenue)
+dim(Government_Revenue)
+summary(Government_Revenue)
+
+##Perfect, let's move to the 3th DF
+####### Public ownership df3 
+
+#do as we did with the two df!!
+
+Public_ownership <- socialism[,c(36,37,44,58)]
+Public_ownership <- cbind(socialism[,3],Public_ownership)
+names(Public_ownership)[names(Public_ownership) == "socialism[, 3]"] <- "Country"
+Public_ownership <- Public_ownership[rowSums(Public_ownership[,-1] != 0) > 0, colSums(Public_ownership != 0) > 0]
+
+#let's check !!
+head(Public_ownership)
+dim(Public_ownership)
+summary(Public_ownership)
+
+
+###Perfect now we are ready for exploratory analysis!!... Let's go :) 
+
+
+```
+
+
+
+```{r}
+
+# Public Expenditures analysis: 
+
+#Descriptive statistics first 
+apply(Public_Expenditures[,3:24],2,mean) # mean per variable except the total to avoid big variance and only focus on variables  
+apply(Public_Expenditures[,3:24],1,mean) # mean per country except the total also 
+
+plot(apply(Public_Expenditures[,3:24],2,mean), main = "Descriptive Statistics Analysis of Public Expenditures DF", sub = "The variables mean", xlab = "Variables List",
+     ylab = "Mean ",col = "blue") 
+# plot the mean per variable except the total
+
+
+plot(apply(Public_Expenditures[,3:24],1,mean), main = " Descriptive Statistics Analysis of Public Expenditures DF", sub = "The countries mean", xlab = "Countries' List",
+     ylab = "Mean ",col = "blue") 
+# plot the mean per country except the total 
+
+################
+#first do the PCA for Public Expenditures for variables as continues variables without countries 
+#all variable should be numerical 
+
+#is it numerical ? 
+str(Public_Expenditures [,2:24]) #Yes!.. Good
+
+res_expand_PCA <- PCA(Public_Expenditures[c(-1,-27),2:24 ], scale.unit = T) 
+#remove USA and Israel as making a big variance for the data and also scale it  
+
+#Let's check 
+explor(res_expand_PCA)
+
+################# MCA
+#then move to MCA to check the data as categories per country 
+#we should transfer it to category as we need to make it as a factor
+Public_Expenditures_factor <- Public_Expenditures %>%  mutate_if(is.numeric,as.factor)
+
+#is it factor now? 
+str(Public_Expenditures_factor) #Yes! .. perfect 
+
+#also naming the rows again
+row.names(Public_Expenditures_factor)
+row.names(Public_Expenditures_factor) <- Public_Expenditures[,1]
+row.names(Public_Expenditures_factor)
+
+#let's do MCA and check
+res_expand_MCA <- MCA(Public_Expenditures_factor, quali.sup=c(2:24))
+
+explor(res_expand_MCA)
+
+########## clustring 
+# we will check the three methods to know what the best that's fits the data
+hc <- dist(scale(Public_Expenditures[-1,2:24]), method = "euclidean")
+res.hc1 <- hclust(hc, method="complete") #Linkage
+
+#Then plot the clusters 
+fviz_dend(res.hc1, cex = 0.5, k=5,main  = "Hierarchical clustering with method (Complete) for Public Expenditures ")
+plot(res.hc1)
+
+res.hc2 <- hclust(hc, method="single")
+plot(res.hc2)
+#Decide where to cut it 
+fviz_dend(res.hc2, cex = 0.5, k=2,main  = "Hierarchical clustering with method (single) for Public Expenditures " )
+
+
+res.hc3 <- hclust(hc, method="ward.D2")
+fviz_dend(res.hc3, cex = 0.5, k=5, main  = "Hierarchical clustering with method (ward.D2) for Public Expenditures ")
+plot(res.hc3)
+
+
+
+```
+
+
+
+```{r}
+
+# Gov revenue analysis (as we did before!)
+
+#Descriptive statistics first 
+
+round(apply(Government_Revenue[,-1],2,mean),2) # mean per variable  
+round(apply(Government_Revenue[,-1],1,mean),2) # mean sources  per country without the total 
+plot(apply(Government_Revenue[,-1],2,mean), main = "Descriptive Statistics Analysis for Gov revenues", sub = "Variables Means", ylab = "Mean ", xlab = "Variables List", col= "blue") # plot the mean per variable without the total 
+
+plot(apply(Government_Revenue[,-1],1,mean), main = "Descriptive Statistics Analysis for Gov revenues", sub = "Countries Means", ylab = "Mean ", xlab = "Countries List", col= "blue") # plot the mean per country without the total 
+
+######### PCA
+
+# is all variable numerical ? 
+str(Government_Revenue) #all numerical except country 
+
+Government_Revenue_num<- Government_Revenue %>% mutate_if(is.factor,as.numeric)
+
+#also naming the rows 
+row.names(Government_Revenue_num)
+row.names(Government_Revenue_num) <- Government_Revenue[,1]
+row.names(Government_Revenue_num)
+
+#selecting main variables that count total revenues in many features and after checking it, I removed some countries that make a big variance as below
+res_revenue_PCA <- PCA(Government_Revenue_num [c(-4,-34,-28,-30,-11),-1], scale.unit = T, quanti.sup = c(6:7))
+
+#Let's check it !!
+explor(res_revenue_PCA)
+
+################ MCA ( Not used in appendix after anaylsis )
+
+# is all variable factors ? 
+str(Government_Revenue) #not at all
+
+Government_Revenue_factor<- Government_Revenue %>% mutate_if(is.numeric,as.factor)
+
+#also naming the rows 
+row.names(Government_Revenue_factor)
+row.names(Government_Revenue_factor) <- Government_Revenue[,1]
+row.names(Government_Revenue_factor)
+
+# use MCA 
+
+res_revenue_MCA <- MCA(Government_Revenue_factor[-1,])
+
+explor(res_revenue_MCA)
+
+###After checking it, MCA didn't reduce the dimnsions as desired, So will not be use in the appendix  
+
+
+############# clustering 
+
+hc_rev <- dist(scale(Government_Revenue[,-1]), method = "euclidean")
+res.rev.hc1 <- hclust(hc_rev, method="complete") #Linkage
+fviz_dend(res.rev.hc1, cex = 0.5, k=2,main  = "Hierarchical clustering with method (Complete) for Gov revenue ")
+plot(res.rev.hc1)
+
+res.rev.hc2 <- hclust(hc_rev, method="single")
+plot(res.rev.hc2)
+#plot the dendrogram
+fviz_dend(res.rev.hc2, cex = 0.5, k=2,main  = "Hierarchical clustering with method (single) for Gov revenue ")#Decide where to cut it (nb=nb clusters)
+
+
+res.rev.hc3 <- hclust(hc_rev, method="ward.D2")
+plot(res.rev.hc3)
+fviz_dend(res.rev.hc3, cex = 0.5, k=2,main  = "Hierarchical clustering with method (ward.D2) for Gov revenue ")#
+
+
+
+
+```
+
+
+```{r}
+#public ownership analysis (as we did before)
+
+#Descriptive statistics first 
+
+round(apply(Public_ownership[,-1],2,mean),2) # mean per variable  
+round(apply(Public_ownership[,-1],1,mean),2) # mean sources  per country without the total 
+plot(apply(Public_ownership[,-1],2,mean), main = "Descriptive Statistics Analysis for Public Ownership", sub = "Variables Means", ylab = "Mean ", xlab = "Variables List", col= "blue") # plot the mean per variable without the total 
+
+plot(apply(Public_ownership[,-1],1,mean), main = "Descriptive Statistics Analysis for Public Ownership", sub = "Countries Means", ylab = "Mean ", xlab = "Countries List", col= "blue") # plot the mean per country without the total 
+
+############## PCA
+
+
+# is all variable numerical ? 
+str(Public_ownership) #all except country 
+
+Public_ownership_num<- Public_ownership %>% mutate_if(is.factor,as.numeric)
+
+#also naming the rows 
+row.names(Public_ownership_num)
+row.names(Public_ownership_num) <- Public_ownership[,1]
+row.names(Public_ownership_num)
+
+#selecting variables except the country as no need to show it 
+res_owner_PCA <- PCA(Public_ownership_num [,-1] , scale.unit = T)
+
+#Let's check it 
+explor(res_owner_PCA)
+
+####### Clusters
+#do it with the three method to check it ?!
+
+hc_owner <- dist(scale(Public_ownership[,-1]), method = "euclidean")
+res.own.hc1 <- hclust(hc_owner, method="complete") #Linkage
+fviz_dend(res.own.hc1, cex = 0.5, k=2,main  = "Hierarchical clustering with method (Complete) for Public Ownership ")
+plot(res.own.hc1)
+
+res.own.hc2 <- hclust(hc_owner, method="single")
+plot(res.own.hc2)
+#plot the dendrogram
+fviz_dend(res.own.hc2, cex = 0.5, k=2,main  = "Hierarchical clustering with method (single) for Public Ownership ")#Decide where to cut it (nb=nb clusters)
+
+
+res.own.hc3 <- hclust(hc_owner, method="ward.D2")
+plot(res.own.hc3)
+fviz_dend(res.own.hc3, cex = 0.5, k=2,main  = "Hierarchical clustering with method (ward.D2) for Public Ownership ")
+
+##Finished.. 
+
+```
+
